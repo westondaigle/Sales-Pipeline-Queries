@@ -1,4 +1,4 @@
--Identify FY22 deals created,and closed (won or lost) at the same point into FY as we are currently (8/30/22)
+--Identify FY22 deals created,and closed (won or lost) at the same point into FY as we are currently (8/30/22)
 SELECT s.SNAPSHOT_DATE
 ,s.ACCOUNT_NAME
 ,s.OPPORTUNITY_NAME
