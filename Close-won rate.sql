@@ -1,23 +1,40 @@
-SELECT SUM(ESTIMATED_GMV)
-FROM(
-select
-deal_close_date,
-case when account_segment = 'Self-Service' then 'SMB' else account_segment end as account_segment,
-case when account_segment in ('Key','Enterprise') then 'Key + Enterprise'
-when account_segment = 'New Markets' then 'New Markets'
-else 'SMB' end as account_segment_adj,
-case when acc.vertical__c in ('Home','Lifestyle','Other','Big Box','Mobile/Devices','Elective Medical','Home Improvement') or acc.vertical__c is null then 'H&L'
-when acc.vertical__c = 'Auto' then 'New Markets'
-else vertical__c end as vertical,
-opportunity_name,
-sfdc_account_name,
-sum(estimated_gmv_signed) as estimated_gmv,
-sum(estimated_revenue_signed) as estimated_revenue,
-count(distinct opportunity_id) as num_deals
-from PROD__WORKSPACE__US.SCRATCH_t_strategicfinance.fy23_sales_comp_data sd
-left join prod__us.salesforce.account acc on sd.sfdc_account_id = acc.id
-LEFT JOIN SALESFORCE.RAW_TESTING.OPPORTUNITY o on sd.OPPORTUNITY_ID=o.id
-where sd.type = 'opportunities_data'
-and deal_close_date >= '2022-07-01' and deal_close_date < '2022-10-01'
-and o.Affirm_Business_Unit__c='US'
-group by 1,2,3,4,5,6 order by 1,2,3,4,5,6 asc)
+-------------------------------------------------
+--Calculate win rate for FY23 by Rep Segment and FQ
+--------------------------------------------------
+
+--CTE to dedupe opps and provide opp level details
+WITH Closed_Deals AS(
+    SELECT 
+    OPPORTUNITY_ID,
+    OPPORTUNITY_NAME, 
+    CONCAT(OPPORTUNITY_CLOSE_DATE_FISCAL_YEAR,'-',OPPORTUNITY_CLOSE_DATE_FISCAL_QUARTER_NAME) as FQ_Close,
+    OPPORTUNITY_OWNER_NAME, 
+    OPPORTUNITY_OWNER_ROLE,
+    OPPORTUNITY_STAGENAME,
+    CASE WHEN OPPORTUNITY_OWNER_SEGMENT = 'N/A' THEN 'New Markets'
+    ELSE OPPORTUNITY_OWNER_SEGMENT END as Rep_Segment,
+    SUM(MERCHANT_OPPORTUNITY_EST_GMV_FY23) as MERCHANT_OPPORTUNITY_EST_GMV_FY23,
+    SUM(MERCHANT_OPPORTUNITY_EST_GMV_RAW) as MERCHANT_OPPORTUNITY_EST_GMV_RAW    
+    FROM PROD__US.DBT_ANALYTICS.SALES_TERRITORY_DEAL_MART
+    WHERE IS_SALES_OPPORTUNITY = TRUE AND OPPORTUNITY_CLOSE_DATE_FISCAL_YEAR = 2023 AND IS_OPPORTUNITY_CLOSED = TRUE
+    GROUP BY 1,2,3,4,5,6,7
+)
+
+--Calc Win Rates
+SELECT 
+Rep_Segment, 
+FQ_Close, 
+COUNT(OPPORTUNITY_ID) as Total_Closed,
+SUM(CASE WHEN OPPORTUNITY_STAGENAME IN ('7.Closed Won') THEN 1 ELSE 0 END) as Won,
+SUM(CASE WHEN OPPORTUNITY_STAGENAME IN ('8.Closed Lost') THEN 1 ELSE 0 END) as Lost,
+Won/(Won + Lost) as Win_Rate,
+SUM(CASE WHEN OPPORTUNITY_STAGENAME IN ('7.Closed Won') THEN MERCHANT_OPPORTUNITY_EST_GMV_FY23 ELSE 0 END) as Won_Est_GMV,
+SUM(CASE WHEN OPPORTUNITY_STAGENAME IN ('8.Closed Lost') THEN MERCHANT_OPPORTUNITY_EST_GMV_FY23 ELSE 0 END) as Lost_Est_GMV,
+Won_Est_GMV/(Won_Est_GMV + Lost_Est_GMV) as Win_Rate_Est_GMV
+FROM Closed_Deals
+GROUP BY 1,2
+ORDER BY 2,1
+
+--View opp level data from CTE
+--SELECT * FROM Closed_Deals
+
